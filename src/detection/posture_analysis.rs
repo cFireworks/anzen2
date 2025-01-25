@@ -7,7 +7,7 @@ pub enum BabyStatus {
     Unknown,
 }
 
-pub fn analyze_baby_posture(image_data: &[u8]) -> (BabyStatus, Vec<u8>) {
+pub fn analyze_baby_posture(image_data: &Vec<u8>) -> (BabyStatus, Vec<u8>) {
     // Implement actual posture detection logic here.
     // For now, we assume the baby is awake.
     let baby_status = BabyStatus::Awake;
