@@ -60,10 +60,11 @@ impl Handler<ImageReadyEvent> for VideoSession {
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for VideoSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
-            Ok(ws::Message::Binary(_msg)) => {
+            Ok(ws::Message::Binary(msg)) => {
                 // it's possible that if the image is small enough that 
                 // this will call instead of the Continuation block below
-                log::warn!("received binary message - currently not supported");
+                log::trace!("message binary");
+                self.prepare_and_send_event(&msg);
             },
             Ok(ws::Message::Text(msg)) => {
                 if log::log_enabled!(log::Level::Debug) {
@@ -153,24 +154,28 @@ impl VideoSession {
     fn end_continuation(&mut self, data: &Bytes) {
         if self.is_message_fragmented {
             self.is_message_fragmented = false;
+            self.prepare_and_send_event(data);
+        }
+    }
+
+    fn prepare_and_send_event(&mut self, data: &Bytes) {
             self.buffer.extend_from_slice(data);
-        
-            let mut image_data = self.buffer.split_off(0);
             
+            let mut image_data = self.buffer.split_off(0);
+                
             if let Some(sender_id) = images::app::extract_sender_id(&image_data) {
                 images::app::remove_sender_id(&mut image_data);
-        
+            
                 log::debug!(
                     "sender_id: {}, image data length: {}",
                     sender_id,
                     image_data.len()
                 );
-            
+        
                 let img_rdy_evt = ImageReadyEvent(sender_id, image_data);
                 if let Err(err) = self.server.try_send(img_rdy_evt) {
                     log::error!("error in sending image ready event: {}", err.to_string());
                 }
             }
         }
-    }
 }
