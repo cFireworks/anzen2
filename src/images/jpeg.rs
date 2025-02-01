@@ -2,6 +2,7 @@ extern crate derive_more;
 use derive_more::Display;
 
 const APP1_MARKER: [u8; 2] = [0xFF, 0xE1];
+const SENDER_ID_LENGTH: usize = 7;
 
 enum ExtractionPhase {
     None,
@@ -22,8 +23,8 @@ pub fn is_jpeg(image_data: &Vec<u8>) -> bool {
     
     image_data[0] == 0xFF && 
         image_data[1] == 0xD8 && 
-        image_data[image_data.len() - 2] == 0xFF && 
-        image_data[image_data.len() - 1] == 0xD9
+        image_data[image_data.len() - 2 - SENDER_ID_LENGTH] == 0xFF && 
+        image_data[image_data.len() - 1 - SENDER_ID_LENGTH] == 0xD9
 }
 
 

@@ -4,6 +4,7 @@ use actix_http::ws::Item;
 use actix_web_actors::ws;
 use actix::AsyncContext;
 use bytes::Bytes;
+use std::time::Instant;
 
 use crate::{client_message::{ClientMessage, DEVICE_CONNECTION_TYPE, IMAGE_READY_TYPE, MONITOR_CONNECTION_TYPE}, images::{self, ImageType}, stream_server::{AddMonitorClientEvent, ImageReadyEvent, StreamServer, VideoSessionEndedEvent}};
 
@@ -11,6 +12,7 @@ pub struct VideoSession {
     server: Addr<StreamServer>,
     buffer: Vec<u8>,
     is_message_fragmented: bool,
+    fragment_start_time: Instant,
 }
 
 impl VideoSession {
@@ -18,7 +20,8 @@ impl VideoSession {
         Self { 
             server,
             buffer: Vec::<u8>::new(), 
-            is_message_fragmented: false
+            is_message_fragmented: false,
+            fragment_start_time: Instant::now()
         }
     }
 }
@@ -143,6 +146,7 @@ impl VideoSession {
     fn begin_continuation(&mut self, data: &Bytes) {
         self.buffer.extend_from_slice(data);
         self.is_message_fragmented = true;
+        self.fragment_start_time = Instant::now();
     }
 
     fn continue_continuation(&mut self, data: &Bytes) {
@@ -154,6 +158,14 @@ impl VideoSession {
     fn end_continuation(&mut self, data: &Bytes) {
         if self.is_message_fragmented {
             self.is_message_fragmented = false;
+
+            let total_duration = self.fragment_start_time.elapsed();
+            // 输出接收数据总时间
+            log::debug!(
+                "Total Fragments receiving time: {:?}",
+                total_duration
+            );
+
             self.prepare_and_send_event(data);
         }
     }
@@ -169,10 +181,21 @@ impl VideoSession {
                 match image_type {
                     Some(ImageType::JPEG) => {
                         // 处理 JPEG 格式的图像
+                        images::app::remove_sender_id(&mut image_data);
+
                         log::debug!("JPEG sender_id: {}, image data length: {}", sender_id, image_data.len());
-                        let img_rdy_evt = ImageReadyEvent(sender_id, image_data);
-                        if let Err(err) = self.server.try_send(img_rdy_evt) {
-                            log::error!("error in sending image ready event: {}", err);
+
+                        // 将JPEG转换为RGBA格式
+                        match images::jpeg_to_rgba(&image_data) {
+                            Ok(rgba_data) => {
+                                let img_rdy_evt = ImageReadyEvent(sender_id, rgba_data);
+                                if let Err(err) = self.server.try_send(img_rdy_evt) {
+                                    log::error!("error in sending image ready event: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to convert JPEG to RGBA: {}", err);
+                            }
                         }
                     },
                     Some(ImageType::RGBA) => {
