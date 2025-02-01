@@ -2,10 +2,10 @@ import cv2
 from .base import CameraBase
 
 class CV2Camera(CameraBase):
-    def __init__(self, device=0, resolution=(640, 480), fps=15):
+    def __init__(self, device=0, resolution=(640, 480), camera_fps=15):
         self.device = device
         self.resolution = resolution
-        self.fps = fps
+        self.fps = camera_fps
         self.capture = None
 
     def start_capture(self):

@@ -8,5 +8,8 @@ class CameraFactory:
         elif camera_type == 'v4l2':
             from .v4l2_camera import V4L2Camera
             return V4L2Camera(**kwargs)
+        elif camera_type == 'ffmpeg':
+            from .ffmpeg_camera import FFmpegCamera
+            return FFmpegCamera(**kwargs)
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")

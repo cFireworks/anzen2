@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class WebSocketClient:
-    def __init__(self, camera_type='cv2', **camera_params):
+    def __init__(self, camera_type='cv2', fps=15, **camera_params):
         # 配置参数
         self.RECONNECT_INTERVAL = 5  # 重连间隔（秒）
         self.MAX_RETRIES = 5         # 最大重试次数
@@ -23,6 +23,8 @@ class WebSocketClient:
         self.RESOLUTION = (640, 480) # 与JS中的idealResolution一致
         self.FRAME_INTERVAL = 0.25   # 发送间隔（秒）
         self.MAX_CHUNK_SIZE = 64 * 1024
+        self.MAX_FPS = 35
+        self.fps = fps
         
         # 状态管理
         self.ws = None
@@ -73,13 +75,26 @@ class WebSocketClient:
     async def send_frames(self):
         """持续发送视频帧"""
         try:
+            last_frame_time = time()
+            last_iteration_time = 0
             while self.running and self.ws:
                 iteration_start = time()
+
+                frame_duration = iteration_start - last_frame_time
+
+                iteration_duration = iteration_start - last_iteration_time
+                if iteration_duration < (1 / self.MAX_FPS):
+                    continue
+                last_iteration_time = iteration_start
                 
                 # 1. 捕获帧耗时
                 capture_start = time()
                 frame = self.capture.read_frame()
                 capture_duration = time() - capture_start
+
+                if frame_duration < (1 / self.fps):
+                    continue
+                last_frame_time = iteration_start
                 
                 # 2. 数据处理耗时
                 prepare_start = time()
@@ -104,14 +119,13 @@ class WebSocketClient:
                     f"total={total_duration:.3f}s, "
                     f"size={frame_size} bytes"
                 )
-                
+                                
                 # 5. 帧率控制指标
-                sleep_time = max(0, self.FRAME_INTERVAL - total_duration)
+                sleep_time = max(0, 1/self.fps - total_duration)
                 if sleep_time <= 0:
                     logger.warning(
-                        f"[PERF] Frame dropped! Processing exceeded interval by {-sleep_time:.3f}s"
+                        f"[PERF] Frame delayed! Processing exceeded interval by {-sleep_time:.3f}s"
                     )
-                await asyncio.sleep(sleep_time)
                 
         except websockets.ConnectionClosed:
             logger.warning("Connection closed, reconnecting...")
@@ -151,7 +165,7 @@ class WebSocketClient:
 
 if __name__ == "__main__":
     camera_type = os.getenv("CAMERA_TYPE", "cv2")
-    client = WebSocketClient(camera_type=camera_type)
+    client = WebSocketClient(camera_type=camera_type, fps=5, device=0, camera_fps=30)
     
     try:
         asyncio.run(client.run())

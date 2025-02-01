@@ -8,10 +8,11 @@ import numpy as np
 import logging
 
 class V4L2Camera(CameraBase):
-    def __init__(self, device="/dev/video0", resolution=(640, 480), pixel_format=v4l2.V4L2_PIX_FMT_YUYV):
+    def __init__(self, device="/dev/video0", resolution=(640, 480), camera_fps=15, pixel_format=v4l2.V4L2_PIX_FMT_YUYV):
         self.device = device
         self.resolution = resolution
         self.pixel_format = pixel_format
+        self.fps = 15
         self.fd = None
         self.mmapped = None
         self.buf = None
@@ -52,26 +53,6 @@ class V4L2Camera(CameraBase):
             self.buffers.append((buf, mmapped))  # 存储缓冲区对象和内存映射
             # 将缓冲区队列入队
             fcntl.ioctl(self.fd, v4l2.VIDIOC_QBUF, buf)  # 初始入队
-
-        # # 请求缓冲区
-        # reqbuf = v4l2.v4l2_requestbuffers()
-        # reqbuf.type = v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
-        # reqbuf.memory = v4l2.V4L2_MEMORY_MMAP
-        # reqbuf.count = 1
-        # fcntl.ioctl(self.fd, v4l2.VIDIOC_REQBUFS, reqbuf)
-
-        # # 查询缓冲区
-        # self.buf = v4l2.v4l2_buffer()
-        # self.buf.type = v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE
-        # self.buf.memory = v4l2.V4L2_MEMORY_MMAP
-        # self.buf.index = 0
-        # fcntl.ioctl(self.fd, v4l2.VIDIOC_QUERYBUF, self.buf)
-
-        # # 内存映射缓冲区
-        # self.mmapped = mmap.mmap(self.fd, self.buf.length, offset=self.buf.m.offset)
-
-        # # 将缓冲区队列入队
-        # fcntl.ioctl(self.fd, v4l2.VIDIOC_QBUF, self.buf)
 
         # 启动视频流
         self.stream_type = ctypes.c_int(v4l2.V4L2_BUF_TYPE_VIDEO_CAPTURE)
@@ -119,26 +100,6 @@ class V4L2Camera(CameraBase):
             raise
         
         return rgba_frame
-
-    # def read_frame(self):
-    #     """读取一帧视频数据并返回RGBA格式的numpy数组"""
-    #     # 等待缓冲区可用
-    #     poll = select.poll()
-    #     poll.register(self.fd, select.POLLIN)
-    #     poll.poll(5000)  # 等待5秒
-
-    #     # 从缓冲区取出视频帧
-    #     fcntl.ioctl(self.fd, v4l2.VIDIOC_DQBUF, self.buf)
-    #     frame_data = self.mmapped.read(self.buf.bytesused)
-
-    #     # 将视频帧数据转换为numpy数组并进行像素格式转换
-    #     frame = np.frombuffer(frame_data, dtype=np.uint8).reshape(self.resolution[1], self.resolution[0]*2)
-        
-    #     # 这里简单地将YUYV格式转为RGBA格式，您可以根据实际需要调整转换方式
-    #     rgba_frame = self._yuyv_to_rgba(frame)
-
-    #     # 将转换后的帧数据返回
-    #     return rgba_frame
 
     def stop_capture(self):
         """释放采集资源"""
