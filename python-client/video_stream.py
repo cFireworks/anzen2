@@ -7,6 +7,9 @@ from time import time
 from dotenv import load_dotenv
 import logging
 from camera.camera_factory import CameraFactory
+from PIL import Image
+import numpy as np
+from io import BytesIO
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -14,7 +17,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class WebSocketClient:
-    def __init__(self, camera_type='cv2', fps=15, **camera_params):
+    def __init__(self, camera_type='cv2', fps=15, jpeg_compression=False, **camera_params):
         # 配置参数
         self.RECONNECT_INTERVAL = 5  # 重连间隔（秒）
         self.MAX_RETRIES = 5         # 最大重试次数
@@ -25,6 +28,9 @@ class WebSocketClient:
         self.MAX_CHUNK_SIZE = 64 * 1024
         self.MAX_FPS = 35
         self.fps = fps
+
+        self.JPEG_COMPRESSION = jpeg_compression
+        self.JPEG_QUALITY = 75
         
         # 状态管理
         self.ws = None
@@ -60,7 +66,15 @@ class WebSocketClient:
 
     def _prepare_frame_data(self, rgba_frame, is_message_fragmented: False):
         """准备符合服务端格式的帧数据"""
-        frame_byte_array = rgba_frame.tobytes()
+        if self.JPEG_COMPRESSION:
+            # 将RGBA数组转换为JPEG字节数组
+            rgba_image = Image.fromarray(rgba_frame, 'RGBA')
+            with BytesIO() as byte_io:
+                rgba_image.convert('RGB').save(byte_io, format='JPEG', quality=self.JPEG_QUALITY)  # 转换为RGB并保存为JPEG
+                frame_byte_array = byte_io.getvalue()
+        else:
+            # 不使用JPEG压缩时直接转为字节数组
+            frame_byte_array = rgba_frame.tobytes()
         
         # 生成设备ID字节（匹配JS的数字数组格式）
         device_id_bytes = bytes(map(int, str(self.DEVICE_ID)))
@@ -77,6 +91,7 @@ class WebSocketClient:
         try:
             last_frame_time = time()
             last_iteration_time = 0
+            delay_time = 0
             while self.running and self.ws:
                 iteration_start = time()
 
@@ -92,7 +107,7 @@ class WebSocketClient:
                 frame = self.capture.read_frame()
                 capture_duration = time() - capture_start
 
-                if frame_duration < (1 / self.fps):
+                if frame_duration < max(1 / self.fps, delay_time):
                     continue
                 last_frame_time = iteration_start
                 
@@ -121,10 +136,10 @@ class WebSocketClient:
                 )
                                 
                 # 5. 帧率控制指标
-                sleep_time = max(0, 1/self.fps - total_duration)
-                if sleep_time <= 0:
+                delay_time = total_duration - 1/self.fps
+                if delay_time > 0:
                     logger.warning(
-                        f"[PERF] Frame delayed! Processing exceeded interval by {-sleep_time:.3f}s"
+                        f"[PERF] Frame delayed! Processing exceeded interval by {delay_time:.3f}s"
                     )
                 
         except websockets.ConnectionClosed:
@@ -165,7 +180,7 @@ class WebSocketClient:
 
 if __name__ == "__main__":
     camera_type = os.getenv("CAMERA_TYPE", "cv2")
-    client = WebSocketClient(camera_type=camera_type, fps=5, device=0, camera_fps=30)
+    client = WebSocketClient(camera_type=camera_type, fps=5, jpeg_compression=True, device=0, camera_fps=30)
     
     try:
         asyncio.run(client.run())
