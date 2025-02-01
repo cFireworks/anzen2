@@ -1,13 +1,12 @@
+import asyncio
+import websockets
+import json
 import os
 import random
-import cv2
-import websockets
-import asyncio
-import json
-import socket
 from time import time
 from dotenv import load_dotenv
 import logging
+from camera.camera_factory import CameraFactory
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class WebSocketClient:
-    def __init__(self):
+    def __init__(self, camera_type='cv2', **camera_params):
         # 配置参数
         self.RECONNECT_INTERVAL = 5  # 重连间隔（秒）
         self.MAX_RETRIES = 5         # 最大重试次数
@@ -27,7 +26,7 @@ class WebSocketClient:
         
         # 状态管理
         self.ws = None
-        self.capture = None
+        self.capture = CameraFactory.get_camera(camera_type, resolution=self.RESOLUTION, **camera_params)
         self.running = False
         self.reconnect_attempts = 0
 
@@ -57,52 +56,62 @@ class WebSocketClient:
             "data": "connectDevice"
         }))
 
-    def _init_camera(self):
-        """初始化摄像头配置"""
-        self.capture = cv2.VideoCapture(0)
-        if not self.capture.isOpened():
-            raise RuntimeError("Failed to open camera")
-        
-        # 设置分辨率（尝试匹配JS约束）
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.RESOLUTION[0])
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.RESOLUTION[1])
-        self.capture.set(cv2.CAP_PROP_FPS, 15)
-
-    def _prepare_frame_data(self, frame, is_message_fragmented: False):
+    def _prepare_frame_data(self, rgba_frame, is_message_fragmented: False):
         """准备符合服务端格式的帧数据"""
-        # 转换为RGBA格式（匹配JS的Canvas ImageData格式）
-        rgba_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+        frame_byte_array = rgba_frame.tobytes()
         
         # 生成设备ID字节（匹配JS的数字数组格式）
         device_id_bytes = bytes(map(int, str(self.DEVICE_ID)))
         
         # 组合图像数据+设备ID（设备ID附加在末尾）
-        frame_data = rgba_frame.tobytes() + device_id_bytes
+        frame_data = frame_byte_array + device_id_bytes
         if not is_message_fragmented:
             return frame_data
         chunks = [frame_data[i:i+self.MAX_CHUNK_SIZE] for i in range(0, len(frame_data), self.MAX_CHUNK_SIZE)]
         return chunks
 
-
     async def send_frames(self):
         """持续发送视频帧"""
         try:
             while self.running and self.ws:
-                start_time = time()
+                iteration_start = time()
                 
-                # 读取视频帧
-                ret, frame = self.capture.read()
-                if not ret:
-                    print("Failed to capture frame")
-                    continue
-
-                # 准备并发送数据
-                frame_data = self._prepare_frame_data(frame, is_message_fragmented=True)
-                await self.ws.send(frame_data)  # 自动分片处理
+                # 1. 捕获帧耗时
+                capture_start = time()
+                frame = self.capture.read_frame()
+                capture_duration = time() - capture_start
                 
-                # 控制帧率
-                elapsed = time() - start_time
-                await asyncio.sleep(max(0, self.FRAME_INTERVAL - elapsed))
+                # 2. 数据处理耗时
+                prepare_start = time()
+                frame_data_batch = self._prepare_frame_data(frame, is_message_fragmented=True)
+                prepare_duration = time() - prepare_start
+                frame_size = sum([len(frame_data) for frame_data in frame_data_batch])  # 记录帧数据大小
+                
+                # 3. 数据发送耗时
+                send_start = time()
+                await self.ws.send(frame_data_batch)
+                send_duration = time() - send_start
+                
+                # 4. 总耗时
+                total_duration = time() - iteration_start
+                
+                # 记录指标日志
+                logger.debug(
+                    "[PERF] Frame Stats: "
+                    f"capture={capture_duration:.3f}s, "
+                    f"prepare={prepare_duration:.3f}s, "
+                    f"send={send_duration:.3f}s, "
+                    f"total={total_duration:.3f}s, "
+                    f"size={frame_size} bytes"
+                )
+                
+                # 5. 帧率控制指标
+                sleep_time = max(0, self.FRAME_INTERVAL - total_duration)
+                if sleep_time <= 0:
+                    logger.warning(
+                        f"[PERF] Frame dropped! Processing exceeded interval by {-sleep_time:.3f}s"
+                    )
+                await asyncio.sleep(sleep_time)
                 
         except websockets.ConnectionClosed:
             logger.warning("Connection closed, reconnecting...")
@@ -121,15 +130,17 @@ class WebSocketClient:
     async def close_connection(self):
         """关闭连接"""
         if self.ws:
-            await self.ws.close()
-        if self.capture and self.capture.isOpened():
-            self.capture.release()
+            try:
+                await self.ws.close()
+            except Exception as e:
+                logger.error(f"Error during closing websocket: {e}")
+        self.capture.stop_capture()
         logger.info("Connection closed")
 
     async def run(self):
         """主运行循环"""
         self.running = True
-        self._init_camera()
+        self.capture.start_capture()
         
         try:
             await self.connect_websocket()
@@ -139,11 +150,12 @@ class WebSocketClient:
             await self.close_connection()
 
 if __name__ == "__main__":
-    client = WebSocketClient()
+    camera_type = os.getenv("CAMERA_TYPE", "cv2")
+    client = WebSocketClient(camera_type=camera_type)
     
     try:
         asyncio.run(client.run())
     except KeyboardInterrupt:
         asyncio.run(client.close_connection())
     finally:
-        cv2.destroyAllWindows()
+        pass

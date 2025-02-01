@@ -5,7 +5,7 @@ use actix_web_actors::ws;
 use actix::AsyncContext;
 use bytes::Bytes;
 
-use crate::{images, client_message::{ClientMessage, DEVICE_CONNECTION_TYPE, MONITOR_CONNECTION_TYPE, IMAGE_READY_TYPE}, stream_server::{AddMonitorClientEvent, ImageReadyEvent, VideoSessionEndedEvent, StreamServer}};
+use crate::{client_message::{ClientMessage, DEVICE_CONNECTION_TYPE, IMAGE_READY_TYPE, MONITOR_CONNECTION_TYPE}, images::{self, ImageType}, stream_server::{AddMonitorClientEvent, ImageReadyEvent, StreamServer, VideoSessionEndedEvent}};
 
 pub struct VideoSession {
     server: Addr<StreamServer>,
@@ -162,20 +162,32 @@ impl VideoSession {
             self.buffer.extend_from_slice(data);
             
             let mut image_data = self.buffer.split_off(0);
-                
-            if let Some(sender_id) = images::app::extract_sender_id(&image_data) {
-                images::app::remove_sender_id(&mut image_data);
-            
-                log::debug!(
-                    "sender_id: {}, image data length: {}",
-                    sender_id,
-                    image_data.len()
-                );
-        
-                let img_rdy_evt = ImageReadyEvent(sender_id, image_data);
-                if let Err(err) = self.server.try_send(img_rdy_evt) {
-                    log::error!("error in sending image ready event: {}", err.to_string());
+
+            // 判断图像类型（JPEG 或 RGBA）
+            let image_type = images::detect_image_type(&image_data);
+            if let Some(sender_id) = images::get_sender_id(&image_data) {
+                match image_type {
+                    Some(ImageType::JPEG) => {
+                        // 处理 JPEG 格式的图像
+                        log::debug!("JPEG sender_id: {}, image data length: {}", sender_id, image_data.len());
+                        let img_rdy_evt = ImageReadyEvent(sender_id, image_data);
+                        if let Err(err) = self.server.try_send(img_rdy_evt) {
+                            log::error!("error in sending image ready event: {}", err);
+                        }
+                    },
+                    Some(ImageType::RGBA) => {
+                        // 处理 RGBA 格式的图像
+                        images::app::remove_sender_id(&mut image_data);
+                        log::debug!("RGBA sender_id: {}, image data length: {}", sender_id, image_data.len());
+                        let img_rdy_evt: ImageReadyEvent = ImageReadyEvent(sender_id, image_data);
+                        if let Err(err) = self.server.try_send(img_rdy_evt) {
+                            log::error!("error in sending image ready event: {}", err);
+                        }
+                    },
+                    _ => log::error!("unsupported image type"),
                 }
+            } else {
+                log::error!("Failed to extract sender ID from {:?} image", image_type);
             }
-        }
+    }
 }

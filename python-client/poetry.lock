@@ -190,6 +190,18 @@ files = [
 cli = ["click (>=5.0)"]
 
 [[package]]
+name = "v4l2-python3"
+version = "0.3.5"
+description = "Python bindings for the v4l2 userspace api."
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "v4l2-python3-0.3.5.tar.gz", hash = "sha256:e7e24739c1816d64a82929b81781ada4e5640974157a39585ad2e02dfdb102fd"},
+    {file = "v4l2_python3-0.3.5-py3-none-any.whl", hash = "sha256:5a6f88c0b5101dd11c6093599adb75d0d42179cf8e9789925f201338294c1f54"},
+]
+
+[[package]]
 name = "websockets"
 version = "14.2"
 description = "An implementation of the WebSocket Protocol (RFC 6455 & 7692)"
@@ -271,4 +283,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "206eba016fd55ac556af5385c0de01135a820207f5fe185df4767b01c92dfce1"
+content-hash = "cc47c109a7602f6df32963bc45ba7beed3e00356bd82475fa7844eb1a149a168"

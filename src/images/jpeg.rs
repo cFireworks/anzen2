@@ -15,7 +15,7 @@ pub enum JpegErr {
     InvalidAppSection
 }
 
-pub fn is_jpeg(image_data: &[u8]) -> bool {
+pub fn is_jpeg(image_data: &Vec<u8>) -> bool {
     if image_data.len() < 4 {
         return false;
     }
@@ -27,7 +27,7 @@ pub fn is_jpeg(image_data: &[u8]) -> bool {
 }
 
 
-pub fn extract_app_section(jpeg_data: &[u8]) -> Result<Vec<u8>, JpegErr> {
+pub fn extract_app_section(jpeg_data: &Vec<u8>) -> Result<Vec<u8>, JpegErr> {
     let mut app_section_length = Vec::new();
     let mut app_section_data = Vec::new();
     let mut tracker = ExtractionPhase::None;
