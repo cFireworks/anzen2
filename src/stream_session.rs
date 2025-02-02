@@ -185,26 +185,40 @@ impl VideoSession {
 
                         log::debug!("JPEG sender_id: {}, image data length: {}", sender_id, image_data.len());
 
-                        // 将JPEG转换为RGBA格式
-                        match images::jpeg_to_rgba(&image_data) {
-                            Ok(rgba_data) => {
-                                let img_rdy_evt = ImageReadyEvent(sender_id, rgba_data);
-                                if let Err(err) = self.server.try_send(img_rdy_evt) {
-                                    log::error!("error in sending image ready event: {}", err);
-                                }
-                            }
-                            Err(err) => {
-                                log::error!("Failed to convert JPEG to RGBA: {}", err);
-                            }
+                        let img_rdy_evt: ImageReadyEvent = ImageReadyEvent(sender_id, image_data);
+                        if let Err(err) = self.server.try_send(img_rdy_evt) {
+                            log::error!("error in sending image ready event: {}", err);
                         }
+
+                        // 将JPEG转换为RGBA格式
+                        // match images::jpeg_to_rgba(&image_data) {
+                        //     Ok(rgba_data) => {
+                        //         let img_rdy_evt = ImageReadyEvent(sender_id, rgba_data);
+                        //         if let Err(err) = self.server.try_send(img_rdy_evt) {
+                        //             log::error!("error in sending image ready event: {}", err);
+                        //         }
+                        //     }
+                        //     Err(err) => {
+                        //         log::error!("Failed to convert JPEG to RGBA: {}", err);
+                        //     }
+                        // }
                     },
                     Some(ImageType::RGBA) => {
                         // 处理 RGBA 格式的图像
                         images::app::remove_sender_id(&mut image_data);
                         log::debug!("RGBA sender_id: {}, image data length: {}", sender_id, image_data.len());
-                        let img_rdy_evt: ImageReadyEvent = ImageReadyEvent(sender_id, image_data);
-                        if let Err(err) = self.server.try_send(img_rdy_evt) {
-                            log::error!("error in sending image ready event: {}", err);
+
+                        // 将JPEG转换为RGBA格式
+                        match images::rgba_to_jpeg(&image_data, 640, 480) {
+                            Ok(jpeg_data) => {
+                                let img_rdy_evt = ImageReadyEvent(sender_id, jpeg_data);
+                                if let Err(err) = self.server.try_send(img_rdy_evt) {
+                                    log::error!("error in sending image ready event: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to convert RGBA to JPEG: {}", err);
+                            }
                         }
                     },
                     _ => log::error!("unsupported image type"),

@@ -5,8 +5,7 @@ pub mod stream_session;
 pub mod time;
 pub mod images;
 pub mod detection {
-    pub mod baby_detection;
-    pub mod posture_analysis;
+    pub mod baby_analysis;
 }
 
 pub fn add(left: usize, right: usize) -> usize {

@@ -1,6 +1,6 @@
-use crate::detection::posture_analysis::BabyStatus;
-use crate::detection::posture_analysis::analyze_baby_posture;
-use crate::detection::baby_detection::detect_baby;
+use crate::detection::baby_analysis::BabyStatus;
+use crate::detection::baby_analysis::analyze_baby_posture;
+use crate::images;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -45,44 +45,41 @@ impl actix::Handler<ImageReadyEvent> for StreamServer {
         let device_sender_id = msg.0;
         let image_data = msg.1;
         // Step 1: Perform quick baby target detection
-        let start = Instant::now();  // 记录Step 1的开始时间
-        let baby_detected = detect_baby(&image_data);
+        let start: Instant = Instant::now();  // 记录Step 1的开始时间
+        let (baby_detected, baby_status, annotated_image) = analyze_baby_posture(&image_data);
         let duration_step_1 = start.elapsed();  // 计算Step 1的耗时
         
         if !baby_detected {
             // No baby detected, directly forward the image to the monitor clients
             let start = Instant::now();  // 记录Step 4的开始时间
-            forward_to_monitor_clients(device_sender_id, image_data.clone(), &self.connected_monitor_clients);
-            let duration_step_4 = start.elapsed();  // 计算Step 4的耗时
-                    // 计算总耗时
+            let rgba_data = images::jpeg_to_rgba(&image_data).unwrap();
+            forward_to_monitor_clients(device_sender_id, rgba_data, &self.connected_monitor_clients);
+            let duration_step_3 = start.elapsed();  // 计算Step 4的耗时
+            // 计算总耗时
             let total_duration = start_total.elapsed();
 
             // 输出总时间以及各阶段的时间
             log::debug!(
                 "Total processing time: {:?}\n\
                 Step 1 (Baby Detection) took: {:?}\n\
-                Step 4 (Forward Annotated Image) took: {:?}",
+                Step 3 (Forward Annotated Image) took: {:?}",
                 total_duration,
                 duration_step_1,
-                duration_step_4
+                duration_step_3
             );
             return;
         }
 
-        // Step 2: If baby detected, perform posture analysis (sleeping or awake)
-        let start = Instant::now();  // 记录Step 2的开始时间
-        let (baby_status, annotated_image) = analyze_baby_posture(&image_data);
-        let duration_step_2 = start.elapsed();  // 计算Step 2的耗时
-
-        // Step 3: If baby is awake, send to remote baby sleep alert API
+        // Step 2: If baby is awake, send to remote baby sleep alert API
         if baby_status == BabyStatus::Awake {
             log::debug!("Baby Status: Awake (id: {})", device_sender_id);
         }
 
-        // Step 4: Forward annotated image to monitor clients
+        // Step 3: Forward annotated image to monitor clients
         let start = Instant::now();  // 记录Step 4的开始时间
-        forward_to_monitor_clients(device_sender_id, annotated_image, &self.connected_monitor_clients);
-        let duration_step_4 = start.elapsed();  // 计算Step 4的耗时
+
+        forward_to_monitor_clients(device_sender_id, annotated_image.unwrap(), &self.connected_monitor_clients);
+        let duration_step_3 = start.elapsed();  // 计算Step 4的耗时
 
         // 计算总耗时
         let total_duration = start_total.elapsed();
@@ -91,12 +88,10 @@ impl actix::Handler<ImageReadyEvent> for StreamServer {
         log::debug!(
             "Total processing time: {:?}\n\
             Step 1 (Baby Detection) took: {:?}\n\
-            Step 2 (Posture Analysis) took: {:?}\n\
             Step 4 (Forward Annotated Image) took: {:?}",
             total_duration,
             duration_step_1,
-            duration_step_2,
-            duration_step_4
+            duration_step_3
         );
     }
 }

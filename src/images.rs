@@ -1,7 +1,7 @@
 pub mod jpeg;
 pub mod app;
 
-use image::{self, RgbaImage};
+use image::{self, RgbaImage, ImageFormat};
 use std::io::Cursor;
 
 
@@ -49,4 +49,18 @@ pub fn jpeg_to_rgba(jpeg_data: &Vec<u8>) -> Result<Vec<u8>, String> {
 
     // 返回 RGBA 数据字节流
     Ok(rgba_bytes)
+}
+
+pub fn rgba_to_jpeg(rgba_data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+    // Step 1: 创建 RgbaImage，传入 RGBA 数据、宽度和高度
+    let img: RgbaImage = RgbaImage::from_raw(width, height, rgba_data.to_vec())
+        .ok_or_else(|| "Failed to create image from RGBA data".to_string())?;
+
+    // Step 2: 将 RgbaImage 转换为 JPEG 格式的字节流
+    let mut jpeg_bytes = Vec::new();
+    img.write_to(&mut Cursor::new(&mut jpeg_bytes), ImageFormat::Jpeg)
+        .map_err(|e| format!("Failed to encode image as JPEG: {}", e))?;
+
+    // 返回 JPEG 图像字节流
+    Ok(jpeg_bytes)
 }
